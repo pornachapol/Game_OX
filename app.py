@@ -1,280 +1,332 @@
+# app.py
 import random
-from typing import List, Optional, Tuple
-
 import streamlit as st
 
 # -----------------------------
-# Page & Theme
+# Config & Theme
 # -----------------------------
-st.set_page_config(page_title="OX Game • Streamlit", page_icon="🎮", layout="centered")
+st.set_page_config(page_title="OX (Tic-Tac-Toe)", page_icon="🎮", layout="centered")
 
-# Inject a bit of CSS for a slick look
-st.markdown(
-    """
-    <style>
-        :root {
-            --x-color: #ff4b4b;
-            --o-color: #2bb673;
-            --board-bg: #0e1117; /* Streamlit dark bg friendly */
-            --tile-bg: #1f2633;
-            --tile-hover: #2a3342;
-            --accent: #7aa2f7;
-        }
-        .board {
-            display: grid;
-            grid-template-columns: repeat(3, 110px);
-            gap: 10px;
-            justify-content: center;
-            background: transparent;
-            padding: 10px 0 20px 0;
-        }
-        .tile button {
-            width: 110px !important;
-            height: 110px !important;
-            border-radius: 22px !important;
-            background: var(--tile-bg) !important;
-            border: 1px solid rgba(255,255,255,0.08) !important;
-            transition: all .15s ease;
-            font-size: 44px !important;
-            font-weight: 700 !important;
-            letter-spacing: 1px;
-        }
-        .tile button:hover {
-            background: var(--tile-hover) !important;
-            transform: translateY(-1px);
-        }
-        .mark-x { color: var(--x-color); text-shadow: 0 0 16px rgba(255,75,75,.35); }
-        .mark-o { color: var(--o-color); text-shadow: 0 0 16px rgba(43,182,115,.35); }
-        .score-badge {
-            padding: 6px 10px; border-radius: 10px; background: rgba(255,255,255,.04);
-            border: 1px solid rgba(255,255,255,.08); margin-right: 8px;
-        }
-        .winner-text { font-weight: 800; font-size: 28px; }
-        .subtle { opacity: .8 }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+PRIMARY_BG = "#111318"
+PANEL_BG   = "#1B1F2A"
+ACCENT     = "#6C8CFF"
+X_COLOR    = "#FF5C5C"
+O_COLOR    = "#F56AC1"
+GRID_BG    = "#23293A"
+
+CSS = f"""
+<style>
+    .stApp {{
+        background: {PRIMARY_BG};
+        color: #FFFFFF;
+    }}
+    .main .block-container {{
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+        max-width: 900px;
+    }}
+    .title-wrap {{
+        display:flex; align-items:center; gap:12px; margin-bottom:6px;
+    }}
+    .score-wrap {{
+        background:{PANEL_BG}; padding:10px 14px; border-radius:12px; 
+        display:inline-flex; gap:16px; font-weight:700; margin: 6px 0 16px 0;
+        border:1px solid rgba(255,255,255,0.06);
+    }}
+    /* Board buttons */
+    .stButton > button {{
+        width: 100% !important;
+        height: 110px !important;
+        border-radius: 14px !important;
+        background: {GRID_BG} !important;
+        border: 2px solid rgba(255,255,255,0.08) !important;
+        font-size: 44px !important;
+        font-weight: 800 !important;
+        color: #FFFFFF !important;
+        box-shadow: none !important;
+    }}
+    /* Make grid spacing nice */
+    div[data-testid="column"] {{
+        padding: 6px 8px !important;
+    }}
+    .panel {{
+        background:{PANEL_BG}; padding:14px 16px; border-radius:12px;
+        border:1px solid rgba(255,255,255,0.07);
+    }}
+    .smallnote {{ opacity:.8; font-size:.9rem; }}
+</style>
+"""
+st.markdown(CSS, unsafe_allow_html=True)
 
 # -----------------------------
-# Helpers
+# Helpers: game logic
 # -----------------------------
 WIN_LINES = [
-    (0, 1, 2), (3, 4, 5), (6, 7, 8),  # rows
-    (0, 3, 6), (1, 4, 7), (2, 5, 8),  # cols
-    (0, 4, 8), (2, 4, 6)              # diags
+    (0,1,2), (3,4,5), (6,7,8),         # rows
+    (0,3,6), (1,4,7), (2,5,8),         # cols
+    (0,4,8), (2,4,6)                   # diagonals
 ]
 
+def check_winner(board):
+    for a,b,c in WIN_LINES:
+        if board[a] and board[a] == board[b] == board[c]:
+            return board[a]  # "X" or "O"
+    return None
 
-def check_winner(board: List[str]) -> Tuple[Optional[str], Optional[Tuple[int, int, int]]]:
-    for a, b, c in WIN_LINES:
-        if board[a] != "" and board[a] == board[b] == board[c]:
-            return board[a], (a, b, c)
-    if all(cell != "" for cell in board):
-        return "TIE", None
-    return None, None
+def is_board_full(board):
+    return all(cell != "" for cell in board)
 
-
-def available_moves(board: List[str]) -> List[int]:
+def available_moves(board):
     return [i for i, v in enumerate(board) if v == ""]
 
-
-def minimax(board: List[str], player: str, ai: str, human: str, depth: int,
-            alpha: int, beta: int) -> Tuple[int, Optional[int]]:
-    winner, _ = check_winner(board)
-    if winner == ai:
-        return 10 - depth, None
-    if winner == human:
-        return depth - 10, None
-    if winner == "TIE":
-        return 0, None
-
-    if player == ai:
-        best_score = -10**9
-        best_move = None
-        for m in available_moves(board):
-            board[m] = ai
-            score, _ = minimax(board, human, ai, human, depth + 1, alpha, beta)
-            board[m] = ""
-            if score > best_score:
-                best_score, best_move = score, m
-            alpha = max(alpha, best_score)
-            if beta <= alpha:
-                break
-        return best_score, best_move
-    else:
-        best_score = 10**9
-        best_move = None
-        for m in available_moves(board):
-            board[m] = human
-            score, _ = minimax(board, ai, ai, human, depth + 1, alpha, beta)
-            board[m] = ""
-            if score < best_score:
-                best_score, best_move = score, m
-            beta = min(beta, best_score)
-            if beta <= alpha:
-                break
-        return best_score, best_move
-
-
-def best_ai_move(board: List[str], ai: str, human: str, difficulty: str) -> int:
-    moves = available_moves(board)
-    if difficulty == "Easy":
-        return random.choice(moves)
-    if difficulty == "Normal":
-        # 60% optimal, 40% random to feel human
-        if random.random() < 0.6:
-            _, mv = minimax(board[:], ai, ai, human, 0, -10**9, 10**9)
-            return mv if mv is not None else random.choice(moves)
-        return random.choice(moves)
-    # Hard
-    _, mv = minimax(board[:], ai, ai, human, 0, -10**9, 10**9)
-    return mv if mv is not None else random.choice(moves)
-
+def display_char(mark):
+    return "❌" if mark == "X" else ("⭕" if mark == "O" else " ")
 
 # -----------------------------
-# State
+# Minimax for Hard AI
+# -----------------------------
+def minimax(board, ai_mark, human_mark, is_maximizing):
+    winner = check_winner(board)
+    if winner == ai_mark:
+        return 10
+    if winner == human_mark:
+        return -10
+    if is_board_full(board):
+        return 0
+
+    moves = available_moves(board)
+    if is_maximizing:
+        best = -999
+        for m in moves:
+            board[m] = ai_mark
+            score = minimax(board, ai_mark, human_mark, False)
+            board[m] = ""
+            best = max(best, score)
+        return best
+    else:
+        best = 999
+        for m in moves:
+            board[m] = human_mark
+            score = minimax(board, ai_mark, human_mark, True)
+            board[m] = ""
+            best = min(best, score)
+        return best
+
+def best_move_minimax(board, ai_mark):
+    human_mark = "O" if ai_mark == "X" else "X"
+    best_score = -999
+    move_best = None
+    for m in available_moves(board):
+        board[m] = ai_mark
+        score = minimax(board, ai_mark, human_mark, False)
+        board[m] = ""
+        if score > best_score:
+            best_score = score
+            move_best = m
+    return move_best
+
+# -----------------------------
+# Normal AI (rule-based)
+# -----------------------------
+def find_winning_move(board, mark):
+    for m in available_moves(board):
+        board[m] = mark
+        if check_winner(board) == mark:
+            board[m] = ""
+            return m
+        board[m] = ""
+    return None
+
+def best_move_normal(board, ai_mark):
+    human_mark = "O" if ai_mark == "X" else "X"
+
+    # 1) Win if possible
+    m = find_winning_move(board, ai_mark)
+    if m is not None:
+        return m
+    # 2) Block if needed
+    m = find_winning_move(board, human_mark)
+    if m is not None:
+        return m
+    # 3) Center
+    if board[4] == "":
+        return 4
+    # 4) Corners
+    corners = [i for i in [0,2,6,8] if board[i] == ""]
+    if corners:
+        return random.choice(corners)
+    # 5) Sides
+    sides = [i for i in [1,3,5,7] if board[i] == ""]
+    if sides:
+        return random.choice(sides)
+    return None
+
+# -----------------------------
+# Easy AI (random)
+# -----------------------------
+def best_move_easy(board, ai_mark):
+    moves = available_moves(board)
+    return random.choice(moves) if moves else None
+
+def get_ai_move(board, ai_mark, difficulty):
+    if difficulty == "Hard":
+        return best_move_minimax(board, ai_mark)
+    elif difficulty == "Normal":
+        return best_move_normal(board, ai_mark)
+    else:
+        return best_move_easy(board, ai_mark)
+
+# -----------------------------
+# Session State init
 # -----------------------------
 if "board" not in st.session_state:
     st.session_state.board = [""] * 9
-if "turn" not in st.session_state:
-    st.session_state.turn = "X"
-if "mode" not in st.session_state:
-    st.session_state.mode = "Human vs AI"  # or "Human vs Human"
-if "human" not in st.session_state:
-    st.session_state.human = "X"
-if "ai" not in st.session_state:
-    st.session_state.ai = "O"
-if "difficulty" not in st.session_state:
-    st.session_state.difficulty = "Hard"
-if "score" not in st.session_state:
-    st.session_state.score = {"X": 0, "O": 0, "TIE": 0}
-if "highlight" not in st.session_state:
-    st.session_state.highlight = None
+if "current_player" not in st.session_state:
+    st.session_state.current_player = "X"
+if "scores" not in st.session_state:
+    st.session_state.scores = {"X": 0, "O": 0, "TIE": 0}
 if "game_over" not in st.session_state:
     st.session_state.game_over = False
-
-
-# -----------------------------
-# Sidebar Controls
-# -----------------------------
-st.sidebar.header("⚙️ Settings")
-st.session_state.mode = st.sidebar.radio(
-    "Mode", ["Human vs AI", "Human vs Human"], index=0
-)
-
-if st.session_state.mode == "Human vs AI":
-    st.session_state.human = st.sidebar.radio("You play as", ["X", "O"], index=0)
-    st.session_state.ai = "O" if st.session_state.human == "X" else "X"
-    st.session_state.difficulty = st.sidebar.select_slider(
-        "AI Difficulty", options=["Easy", "Normal", "Hard"], value=st.session_state.difficulty
-    )
-
-col_a, col_b = st.sidebar.columns(2)
-if col_a.button("New Round"):
-    st.session_state.board = [""] * 9
-    st.session_state.turn = "X"
-    st.session_state.highlight = None
-    st.session_state.game_over = False
-
-if col_b.button("Reset Score"):
-    st.session_state.score = {"X": 0, "O": 0, "TIE": 0}
-    st.session_state.board = [""] * 9
-    st.session_state.turn = "X"
-    st.session_state.highlight = None
-    st.session_state.game_over = False
+if "mode" not in st.session_state:
+    st.session_state.mode = "Human vs AI"
+if "difficulty" not in st.session_state:
+    st.session_state.difficulty = "Hard"
+if "human_mark" not in st.session_state:
+    st.session_state.human_mark = "X"   # You play as X by default
 
 # -----------------------------
-# Header & Scoreboard
+# Sidebar controls
 # -----------------------------
-st.title("🎮 OX (Tic‑Tac‑Toe)")
-sub = "🤝 Human vs Human" if st.session_state.mode == "Human vs Human" else f"🧠 Human vs AI · {st.session_state.difficulty}"
-st.caption(sub)
+with st.sidebar:
+    st.markdown("### ⚙️ Settings")
+    mode = st.selectbox("Mode", ["Human vs AI", "Human vs Human"], index=0)
+    if mode != st.session_state.mode:
+        st.session_state.mode = mode
+        st.session_state.board = [""] * 9
+        st.session_state.current_player = "X"
+        st.session_state.game_over = False
 
-with st.container():
-    s = st.session_state.score
-    st.markdown(
-        f"<span class='score-badge'>❌ X: <b>{s['X']}</b></span>"
-        f"<span class='score-badge'>⭕ O: <b>{s['O']}</b></span>"
-        f"<span class='score-badge'>🤝 Tie: <b>{s['TIE']}</b></span>",
-        unsafe_allow_html=True,
-    )
+    if st.session_state.mode == "Human vs AI":
+        diff = st.selectbox("AI Difficulty", ["Easy", "Normal", "Hard"], index=["Easy","Normal","Hard"].index(st.session_state.difficulty))
+        if diff != st.session_state.difficulty:
+            st.session_state.difficulty = diff
+            st.session_state.board = [""] * 9
+            st.session_state.current_player = "X"
+            st.session_state.game_over = False
+
+        mark_pick = st.radio("You play as", ["X", "O"], horizontal=True, index=0)
+        if mark_pick != st.session_state.human_mark:
+            st.session_state.human_mark = mark_pick
+            st.session_state.board = [""] * 9
+            st.session_state.current_player = "X"
+            st.session_state.game_over = False
+
+    st.markdown("---")
+    if st.button("🔁 New Round", use_container_width=True):
+        st.session_state.board = [""] * 9
+        st.session_state.current_player = "X"
+        st.session_state.game_over = False
+
+    if st.button("🗑️ Reset Score", use_container_width=True):
+        st.session_state.scores = {"X": 0, "O": 0, "TIE": 0}
+        st.session_state.board = [""] * 9
+        st.session_state.current_player = "X"
+        st.session_state.game_over = False
 
 # -----------------------------
-# Game Logic Handlers
+# Header
 # -----------------------------
+st.markdown('<div class="title-wrap"><span style="font-size:40px">🎮</span><h1>OX (Tic-Tac-Toe)</h1></div>', unsafe_allow_html=True)
 
-def place_mark(idx: int):
-    if st.session_state.game_over:
-        return
-    if st.session_state.board[idx] != "":
-        return
-    st.session_state.board[idx] = st.session_state.turn
-    st.session_state.turn = "O" if st.session_state.turn == "X" else "X"
+sub = "👥 Human vs Human" if st.session_state.mode == "Human vs Human" else f"🤖 Human vs AI · <b>{st.session_state.difficulty}</b>"
+st.markdown(f'<div class="smallnote">{sub}</div>', unsafe_allow_html=True)
 
-    winner, line = check_winner(st.session_state.board)
+# Score panel
+sx = f'<span style="color:{X_COLOR}">✘ X</span>: {st.session_state.scores["X"]}'
+so = f'<span style="color:{O_COLOR}">◯ O</span>: {st.session_state.scores["O"]}'
+st.markdown(f'<div class="score-wrap">{sx} &nbsp;&nbsp; {so} &nbsp;&nbsp; 🥇 Tie: {st.session_state.scores["TIE"]}</div>', unsafe_allow_html=True)
+
+# -----------------------------
+# Game mechanics
+# -----------------------------
+def conclude_if_end():
+    winner = check_winner(st.session_state.board)
     if winner:
         st.session_state.game_over = True
-        st.session_state.highlight = line
-        st.session_state.score[winner] = st.session_state.score.get(winner, 0) + 1
-        if winner == "TIE":
-            st.toast("It's a tie!", icon="🤝")
-        else:
-            st.toast(f"{winner} wins!", icon="🏆")
-            st.balloons()
+        st.session_state.scores[winner] += 1
+        st.balloons()
+        st.toast(f"{winner} wins! 🎉", icon="🏆")
+        return True
+    if is_board_full(st.session_state.board):
+        st.session_state.game_over = True
+        st.session_state.scores["TIE"] += 1
+        st.toast("It's a tie. 🤝", icon="💤")
+        return True
+    return False
 
-
-def maybe_ai_move():
-    if st.session_state.mode != "Human vs AI":
-        return
+def human_move(cell_index):
     if st.session_state.game_over:
         return
-    # It's AI's turn?
-    if st.session_state.turn == st.session_state.ai:
-        mv = best_ai_move(st.session_state.board[:], st.session_state.ai, st.session_state.human, st.session_state.difficulty)
-        place_mark(mv)
+    if st.session_state.board[cell_index] == "":
+        st.session_state.board[cell_index] = st.session_state.current_player
+        # After human dropped, check
+        if conclude_if_end():
+            return
+        # Next turn
+        st.session_state.current_player = "O" if st.session_state.current_player == "X" else "X"
 
-# If human chose O and it's the very first turn, make AI start
-if st.session_state.mode == "Human vs AI" and st.session_state.human == "O" and st.session_state.board == [""] * 9 and not st.session_state.game_over:
-    maybe_ai_move()
+        # If vs AI and now AI's turn, make AI move
+        if st.session_state.mode == "Human vs AI":
+            ai_mark = "O" if st.session_state.human_mark == "X" else "X"
+            if st.session_state.current_player == ai_mark and not st.session_state.game_over:
+                ai_idx = get_ai_move(st.session_state.board, ai_mark, st.session_state.difficulty)
+                if ai_idx is not None:
+                    st.session_state.board[ai_idx] = ai_mark
+                    if conclude_if_end():
+                        return
+                    st.session_state.current_player = "O" if st.session_state.current_player == "X" else "X"
+
+# Auto-first move by AI when human chooses "O" and board is empty
+if (
+    st.session_state.mode == "Human vs AI"
+    and st.session_state.human_mark == "O"
+    and st.session_state.board == [""] * 9
+    and not st.session_state.game_over
+):
+    ai_mark = "X"
+    ai_idx = get_ai_move(st.session_state.board, ai_mark, st.session_state.difficulty)
+    if ai_idx is not None:
+        st.session_state.board[ai_idx] = ai_mark
+        st.session_state.current_player = "O"
+        # no conclude yet (first move can’t end the game)
 
 # -----------------------------
-# Board Rendering
+# Render 3×3 Grid (clean columns)
 # -----------------------------
-st.markdown("<div class='board'>", unsafe_allow_html=True)
 for r in range(3):
+    cols = st.columns(3, gap="small")
     for c in range(3):
         idx = r * 3 + c
         mark = st.session_state.board[idx]
-        style_class = "mark-x" if mark == "X" else ("mark-o" if mark == "O" else "")
-        label = mark if mark else "\u00A0"  # keep height
-        # Each tile is its own form to avoid double-click issues
-        with st.form(key=f"cell-{idx}"):
-            submitted = st.form_submit_button(
-                label=f":{style_class}:{label}" if style_class else label,
-                use_container_width=False,
-            )
-            if submitted and mark == "":
-                place_mark(idx)
-        
-st.markdown("</div>", unsafe_allow_html=True)
+        label = display_char(mark)
 
-# After human move, let AI respond immediately
-maybe_ai_move()
+        # Use form per cell to avoid multiple clicks in same rerun
+        with cols[c].form(key=f"cell-{idx}"):
+            clicked = st.form_submit_button(label if label.strip() else " ", use_container_width=True)
+            if clicked and mark == "":
+                # Only allow the correct human to click when vs AI
+                if st.session_state.mode == "Human vs AI":
+                    if st.session_state.current_player == st.session_state.human_mark:
+                        human_move(idx)
+                else:
+                    human_move(idx)
 
-# -----------------------------
-# Footer / Turn indicator
-# -----------------------------
+# Turn indicator
 if not st.session_state.game_over:
-    nxt = st.session_state.turn
-    color = "var(--x-color)" if nxt == "X" else "var(--o-color)"
-    st.markdown(f"<div class='subtle'>Next turn: <b style='color:{color}'>{nxt}</b></div>", unsafe_allow_html=True)
+    turn = st.session_state.current_player
+    st.markdown(
+        f'<div class="panel">Turn: {"❌" if turn=="X" else "⭕"} <b>{turn}</b></div>',
+        unsafe_allow_html=True
+    )
 else:
-    winner, _ = check_winner(st.session_state.board)
-    if winner == "TIE":
-        st.markdown("<div class='winner-text'>🤝 Tie Game</div>", unsafe_allow_html=True)
-    else:
-        color = "var(--x-color)" if winner == "X" else "var(--o-color)"
-        st.markdown(f"<div class='winner-text'>🏆 Winner: <span style='color:{color}'>{winner}</span></div>", unsafe_allow_html=True)
-
-st.caption("Built with ❤️ using Streamlit. Source: GitHub repository.")
+    st.markdown('<div class="panel">Game Over — start a new round from the sidebar.</div>', unsafe_allow_html=True)
